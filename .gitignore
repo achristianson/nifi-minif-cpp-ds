@@ -75,4 +75,5 @@ docker/fedora/minificppsource
 .vs/VSWorkspaceState.json
 .vs/slnx.sqlite
 /.ccls-cache
-/.vscode
+CMakeLists.txt.user
+/.vscode/

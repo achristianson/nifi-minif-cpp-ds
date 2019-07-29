@@ -519,6 +519,12 @@ if (ENABLE_TENSORFLOW)
     createExtension(TENSORFLOW-EXTENSIONS "TENSORFLOW EXTENSIONS" "This enables TensorFlow support" "extensions/tensorflow" "${TEST_DIR}/tensorflow-tests")
 endif()
 
+## Data science extensions
+option(ENABLE_DATASCIENCE "Disables the data science extensions." OFF)
+if (ENABLE_DATASCIENCE)
+    createExtension(DATASCIENCE-EXTENSIONS "DATASCIENCE EXTENSIONS" "This enables data science support" "extensions/datascience" "${TEST_DIR}/datascience-tests")
+endif()
+
 ## AWS Extentions
 if (ENABLE_AWS)
 	createExtension(AWS-EXTENSIONS "AWS EXTENSIONS" "This enables AWS support" "extensions/aws" )
