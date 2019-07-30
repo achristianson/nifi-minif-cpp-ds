@@ -19,6 +19,8 @@
 #define NIFI_MINIFI_CPP_SYNTHESIZENIFIMETRICS_H
 
 #include <atomic>
+#include <list>
+#include <random>
 
 #include <concurrentqueue.h>
 #include <core/Processor.h>
@@ -64,8 +66,32 @@ class SynthesizeNiFiMetrics : public core::Processor {
                       const std::shared_ptr<io::BaseStream> &stream);
     int64_t process(std::shared_ptr<io::BaseStream> stream) override;
 
+    struct connection;
+
+    struct ffile {
+      connection *cur_connection;
+
+      double size_bytes;
+      double time_to_process_ms;
+      double time_in_processing_ms;
+    };
+
+    struct connection;
+
     struct processor {
       std::string name;
+      std::list<connection *> inputs;
+      std::map<std::string, std::list<connection *>> outputs;
+
+      std::list<ffile> cur_processing;
+      size_t num_waiting;
+      unsigned int num_threads;
+
+      std::normal_distribution<double> bytes_per_sec;
+      std::normal_distribution<double> count_per_sec;
+
+      double bytes_processed;
+      double count_processed;
     };
 
     struct connection {
@@ -73,15 +99,44 @@ class SynthesizeNiFiMetrics : public core::Processor {
       processor *source_proc;
       std::string source_rel;
       processor *dest_proc;
-      long queued_bytes;
-      long max_queued_bytes;
-      long queued_count;
-      long max_queued_count;
+      unsigned long max_queued_bytes;
+      unsigned long max_queued_count;
+      std::list<ffile> queue;
+      size_t queued_bytes;
+
+      void enqueue(ffile &&f) {
+        queue.emplace_back(std::move(f));
+        queued_bytes += f.size_bytes;
+      }
+
+      ffile dequeue() {
+        ffile f = queue.front();
+        queue.pop_front();
+
+        if (queue.size() == 0) {
+          queued_bytes = 0;
+        } else {
+          queued_bytes -= f.size_bytes;
+        }
+
+        return f;
+      }
+    };
+
+    struct branch_point {
+      size_t id;
+      size_t num_procs;
+      size_t proc_idx;
+      processor *root_proc;
+      processor *last_proc;
     };
 
     struct flow {
-      std::vector<processor> processors;
-      std::vector<connection> connections;
+      unsigned long long time_ms;
+      double proc_ffiles_per_sec;
+      double proc_bytes_per_sec;
+      std::list<processor> processors;
+      std::list<connection> connections;
     };
 
    private:
