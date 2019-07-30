@@ -39,9 +39,6 @@ class SynthesizeNiFiMetrics : public core::Processor {
       : Processor(name, uuid),
         logger_(logging::LoggerFactory<SynthesizeNiFiMetrics>::getLogger()) {}
 
-  static core::Property InputNode;
-  static core::Property OutputNode;
-
   static core::Relationship Success;
   static core::Relationship Retry;
   static core::Relationship Failure;

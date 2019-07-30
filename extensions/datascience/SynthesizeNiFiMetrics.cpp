@@ -27,20 +27,6 @@ namespace nifi {
 namespace minifi {
 namespace processors {
 
-core::Property SynthesizeNiFiMetrics::InputNode(
-    core::PropertyBuilder::createProperty("Input Node")
-        ->withDescription(
-            "The node of the TensorFlow graph to feed tensor inputs to")
-        ->withDefaultValue("")
-        ->build());
-
-core::Property SynthesizeNiFiMetrics::OutputNode(
-    core::PropertyBuilder::createProperty("Output Node")
-        ->withDescription(
-            "The node of the TensorFlow graph to read tensor outputs from")
-        ->withDefaultValue("")
-        ->build());
-
 core::Relationship SynthesizeNiFiMetrics::Success(  // NOLINT
     "success", "Successful graph application outputs");
 core::Relationship SynthesizeNiFiMetrics::Retry(  // NOLINT
@@ -50,8 +36,6 @@ core::Relationship SynthesizeNiFiMetrics::Failure(  // NOLINT
 
 void SynthesizeNiFiMetrics::initialize() {
   std::set<core::Property> properties;
-  properties.insert(InputNode);
-  properties.insert(OutputNode);
   setSupportedProperties(std::move(properties));
 
   std::set<core::Relationship> relationships;
@@ -63,19 +47,7 @@ void SynthesizeNiFiMetrics::initialize() {
 
 void SynthesizeNiFiMetrics::onSchedule(
     core::ProcessContext *context,
-    core::ProcessSessionFactory *sessionFactory) {
-  context->getProperty(InputNode.getName(), input_node_);
-
-  if (input_node_.empty()) {
-    logger_->log_error("Invalid input node");
-  }
-
-  context->getProperty(OutputNode.getName(), output_node_);
-
-  if (output_node_.empty()) {
-    logger_->log_error("Invalid output node");
-  }
-}
+    core::ProcessSessionFactory *sessionFactory) {}
 
 void SynthesizeNiFiMetrics::onTrigger(
     const std::shared_ptr<core::ProcessContext> &context,
