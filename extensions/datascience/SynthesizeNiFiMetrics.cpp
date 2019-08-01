@@ -52,6 +52,12 @@ void SynthesizeNiFiMetrics::onSchedule(
 void SynthesizeNiFiMetrics::onTrigger(
     const std::shared_ptr<core::ProcessContext> &context,
     const std::shared_ptr<core::ProcessSession> &session) {
+  auto input_cmd_ff = session->get();
+
+  if (input_cmd_ff == nullptr) {
+    return;
+  }
+
   try {
     logger_->log_info("Starting NiFi metrics synthesis");
     auto flow_file = session->create();
@@ -59,7 +65,7 @@ void SynthesizeNiFiMetrics::onTrigger(
     session->write(flow_file, &cb);
     flow_file->setAttribute("filename", "synth-data");
     session->transfer(flow_file, Success);
-    //    session->commit();
+    session->remove(input_cmd_ff);
   } catch (std::exception &exception) {
     logger_->log_error("Caught Exception %s", exception.what());
     //    session->transfer(flow_file, Failure);
