@@ -20,11 +20,6 @@
 FROM alpine:3.8 AS builder
 MAINTAINER Apache NiFi <dev@nifi.apache.org>
 
-ARG UID
-ARG GID
-ARG MINIFI_VERSION
-ARG MINIFI_SOURCE_CODE
-
 # Install the system dependencies needed for a build
 RUN apk --update --no-cache upgrade && apk --update --no-cache add gcc \
 	g++ \
@@ -59,34 +54,27 @@ ENV USER minificpp
 ENV MINIFI_BASE_DIR /opt/minifi
 
 # Setup minificpp user
-RUN addgroup -g $GID $USER && adduser -u $UID -D -G $USER -g "" $USER
+RUN addgroup -g 1000 $USER && adduser -u 1000 -D -G $USER -g "" $USER
 RUN mkdir -p $MINIFI_BASE_DIR 
 ENV JAVA_HOME /usr/lib/jvm/default-jvm
 ENV PATH $PATH:/usr/lib/jvm/default-jvm/bin
 
-ADD $MINIFI_SOURCE_CODE $MINIFI_BASE_DIR
-RUN chown -R $USER:$USER $MINIFI_BASE_DIR
+ADD . /usr/local/src/minifi
+RUN chown -R $USER:$USER /usr/local/src/minifi
 
 USER $USER
 
-ENV MINIFI_HOME $MINIFI_BASE_DIR/nifi-minifi-cpp-$MINIFI_VERSION
-
 # Perform the build
-RUN cd $MINIFI_BASE_DIR \
+RUN cd /usr/local/src/minifi \
 	&& mkdir build \
 	&& cd build \
 	&& cmake -DOPENSSL_FORCE_SHARED=true -DDISABLE_JEMALLOC=ON -DSTATIC_BUILD= -DSKIP_TESTS=true -DENABLE_JNI=ON .. \
 	&& make -j8 package \
-	&& tar -xzvf $MINIFI_BASE_DIR/build/nifi-minifi-cpp-$MINIFI_VERSION-bin.tar.gz -C $MINIFI_BASE_DIR
+	&& tar -xzvf /usr/local/src/minifi/build/nifi-minifi-cpp-ds-latest-bin.tar.gz -C $MINIFI_BASE_DIR
 
 # Second stage: the runtime image
 # Edge required for rocksdb
 FROM alpine:3.8
-
-ARG UID
-ARG GID
-ARG MINIFI_VERSION
-ARG MINIFI_SOURCE_CODE
 
 # Add testing repo for rocksdb
 RUN echo 'http://dl-cdn.alpinelinux.org/alpine/edge/testing' >> /etc/apk/repositories
@@ -107,18 +95,17 @@ RUN apk --update --no-cache upgrade && apk add --update --no-cache \
 # Start MiNiFi CPP in the foreground
 ENV USER minificpp
 ENV MINIFI_BASE_DIR /opt/minifi
-ENV MINIFI_HOME $MINIFI_BASE_DIR/nifi-minifi-cpp-$MINIFI_VERSION
 ENV JAVA_HOME /usr/lib/jvm/default-jvm
 ENV PATH $PATH:/usr/lib/jvm/default-jvm/bin
-RUN addgroup -g $GID $USER && adduser -u $UID -D -G $USER -g "" $USER
+RUN addgroup -g 1000 $USER && adduser -u 1000 -D -G $USER -g "" $USER
 RUN mkdir -p $MINIFI_BASE_DIR 
 
 # Copy built minifi distribution from builder
-COPY --from=builder ${MINIFI_HOME} ${MINIFI_HOME}
+COPY --from=builder ${MINIFI_BASE_DIR} ${MINIFI_BASE_DIR}
 RUN chown -R ${USER}:${USER} /opt/minifi
 
 USER $USER
 
 VOLUME /opt/minifi/flow
 WORKDIR /opt/minifi/flow
-CMD ${MINIFI_HOME}/bin/minifi
+CMD ${MINIFI_BASE_DIR}/bin/minifi
