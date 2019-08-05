@@ -70,7 +70,7 @@ RUN cd /usr/local/src/minifi \
 	&& cd build \
 	&& cmake -DOPENSSL_FORCE_SHARED=true -DDISABLE_JEMALLOC=ON -DSTATIC_BUILD= -DSKIP_TESTS=true -DENABLE_JNI=ON .. \
 	&& make -j8 package \
-	&& tar -xzvf /usr/local/src/minifi/build/nifi-minifi-cpp-ds-latest-bin.tar.gz -C $MINIFI_BASE_DIR
+	&& tar -xzvf /usr/local/src/minifi/build/nifi-minifi-cpp-0.7.0-bin.tar.gz -C $MINIFI_BASE_DIR
 
 # Second stage: the runtime image
 # Edge required for rocksdb
@@ -101,7 +101,7 @@ RUN addgroup -g 1000 $USER && adduser -u 1000 -D -G $USER -g "" $USER
 RUN mkdir -p $MINIFI_BASE_DIR 
 
 # Copy built minifi distribution from builder
-COPY --from=builder ${MINIFI_BASE_DIR} ${MINIFI_BASE_DIR}
+COPY --from=builder ${MINIFI_BASE_DIR}/nifi-minifi-cpp-0.7.0 ${MINIFI_BASE_DIR}
 RUN chown -R ${USER}:${USER} /opt/minifi
 
 USER $USER
