@@ -61,6 +61,7 @@ ENV PATH $PATH:/usr/lib/jvm/default-jvm/bin
 
 ADD . /usr/local/src/minifi
 RUN chown -R $USER:$USER /usr/local/src/minifi
+RUN chown -R $USER:$USER ${MINIFI_BASE_DIR}
 
 USER $USER
 
