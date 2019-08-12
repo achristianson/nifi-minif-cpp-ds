@@ -195,8 +195,8 @@ int64_t SynthesizeNiFiMetrics::MetricsWriteCallback::process(
   int total_threads = .4 * flow.processors.size();
   int available_threads = total_threads;
 
-  double time_step_ms = 10;
-  size_t sim_steps = 12 * 60 * 60 * (1000 / static_cast<size_t>(time_step_ms));
+  size_t time_step_ms = 10;
+  size_t sim_steps = 12 * 60 * 60 * (1000 / time_step_ms);
 
   for (size_t sim_step = 0; sim_step < sim_steps; sim_step++) {
     // random walk the ingest rate
@@ -272,6 +272,8 @@ int64_t SynthesizeNiFiMetrics::MetricsWriteCallback::process(
               c->enqueue(std::move(clone));
             }
 
+            p.bytes_processed += (*it).size_bytes;
+            p.count_processed++;
             p.cur_processing.erase(it++);
             available_threads++;
             assert(available_threads <= total_threads);
@@ -323,7 +325,8 @@ int64_t SynthesizeNiFiMetrics::MetricsWriteCallback::process(
 
     // Record the state every second.
     if (flow.time_ms % 1000 == 0) {
-      ret += record_state(sim_step, flow, stream);
+      ret += record_state(sim_step * time_step_ms, sim_step == 0,
+                          ingest_per_sec, flow, stream);
     }
 
     // Proceed in time step intervals.
@@ -344,35 +347,38 @@ int64_t SynthesizeNiFiMetrics::MetricsWriteCallback::write_str(
 }
 
 int64_t SynthesizeNiFiMetrics::MetricsWriteCallback::record_state(
-    size_t step, flow &state, const std::shared_ptr<io::BaseStream> &stream) {
+    size_t time, bool headers, double ingest_per_sec, flow &state,
+    const std::shared_ptr<io::BaseStream> &stream) {
   int64_t ret = 0;
+
   // Output header on step 0.
-  if (step == 0) {
-    size_t conn_idx = 0;
-    for (const auto &c : state.connections) {
-      ret += write_str(c.name.c_str(), stream);
-      ret += write_str("_queued_count,", stream);
-      ret += write_str(c.name, stream);
-      ret += write_str("_max_queued_count,", stream);
-      ret += write_str(c.name, stream);
-      ret += write_str("_queued_bytes,", stream);
-      ret += write_str(c.name, stream);
-      ret += write_str("_max_queued_bytes", stream);
-
-      if (conn_idx < state.connections.size() - 1) {
-        ret += write_str(",", stream);
-      } else {
-        ret += write_str("\n", stream);
-      }
-
-      conn_idx++;
-    }
+  if (headers) {
+    ret += write_str("time_ms,", stream);
+    ret += write_str("ingest_per_sec,", stream);
+    ret += write_str("connection_id,", stream);
+    ret += write_str("connection_name,", stream);
+    ret += write_str("queued_count,", stream);
+    ret += write_str("max_queued_count,", stream);
+    ret += write_str("queued_bytes,", stream);
+    ret += write_str("max_queued_bytes,", stream);
+    ret += write_str("source_count_processed,", stream);
+    ret += write_str("source_bytes_processed,", stream);
+    ret += write_str("dest_count_processed,", stream);
+    ret += write_str("dest_bytes_processed\n", stream);
   }
 
   // Write state values
   size_t conn_idx = 0;
 
   for (const auto &c : state.connections) {
+    ret += write_str(std::to_string(time), stream);
+    ret += write_str(",", stream);
+    ret += write_str(std::to_string(ingest_per_sec), stream);
+    ret += write_str(",", stream);
+    ret += write_str(c.name, stream);
+    ret += write_str(",", stream);
+    ret += write_str(c.name, stream);
+    ret += write_str(",", stream);
     ret += write_str(std::to_string(c.queue.size()), stream);
     ret += write_str(",", stream);
     ret += write_str(std::to_string(c.max_queued_count), stream);
@@ -380,12 +386,15 @@ int64_t SynthesizeNiFiMetrics::MetricsWriteCallback::record_state(
     ret += write_str(std::to_string(c.queued_bytes), stream);
     ret += write_str(",", stream);
     ret += write_str(std::to_string(c.max_queued_bytes), stream);
-
-    if (conn_idx < state.connections.size() - 1) {
-      ret += write_str(",", stream);
-    } else {
-      ret += write_str("\n", stream);
-    }
+    ret += write_str(",", stream);
+    ret += write_str(std::to_string(c.source_proc->count_processed), stream);
+    ret += write_str(",", stream);
+    ret += write_str(std::to_string(c.source_proc->bytes_processed), stream);
+    ret += write_str(",", stream);
+    ret += write_str(std::to_string(c.dest_proc->count_processed), stream);
+    ret += write_str(",", stream);
+    ret += write_str(std::to_string(c.dest_proc->bytes_processed), stream);
+    ret += write_str("\n", stream);
 
     conn_idx++;
   }

@@ -87,8 +87,8 @@ class SynthesizeNiFiMetrics : public core::Processor {
       std::normal_distribution<double> bytes_per_sec;
       std::normal_distribution<double> count_per_sec;
 
-      double bytes_processed;
-      double count_processed;
+      size_t bytes_processed;
+      size_t count_processed;
     };
 
     struct connection {
@@ -138,7 +138,8 @@ class SynthesizeNiFiMetrics : public core::Processor {
 
    private:
     std::shared_ptr<logging::Logger> logger_;
-    int64_t record_state(size_t step, flow &state,
+    int64_t record_state(size_t time, bool headers, double ingest_per_sec,
+                         flow &state,
                          const std::shared_ptr<io::BaseStream> &stream);
   };
 
