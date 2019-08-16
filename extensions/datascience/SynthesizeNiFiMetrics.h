@@ -136,6 +136,8 @@ class SynthesizeNiFiMetrics : public core::Processor {
       std::list<connection> connections;
       int total_threads;
       int available_threads;
+      size_t bytes_ingested;
+      size_t count_ingested;
     };
 
    private:

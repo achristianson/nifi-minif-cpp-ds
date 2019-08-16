@@ -109,6 +109,8 @@ int64_t SynthesizeNiFiMetrics::MetricsWriteCallback::process(
   int64_t ret = 0;
   flow flow;
   flow.time_ms = 0;
+  flow.bytes_ingested = 0;
+  flow.count_ingested = 0;
   unsigned int branch_depth = 0;
   std::list<branch_point> branch_stack;
   size_t next_branch_id = 0;
@@ -198,8 +200,13 @@ int64_t SynthesizeNiFiMetrics::MetricsWriteCallback::process(
   size_t time_step_ms = 10;
   size_t sim_steps = 12 * 60 * 60 * (1000 / time_step_ms);
 
+  // Track 5-second window for flow rates
+  std::vector<size_t> window_num_ingested;
+  window_num_ingested.resize(5000 / time_step_ms);
+  size_t window_num_ingested_idx = 0;
+
   for (size_t sim_step = 0; sim_step < sim_steps; sim_step++) {
-    // random walk the ingest rate
+    // Random walk the ingest rate
     ingest_per_sec += ingest_rwalk_dist(rng);
 
     if (ingest_per_sec < 0) {
@@ -210,25 +217,41 @@ int64_t SynthesizeNiFiMetrics::MetricsWriteCallback::process(
 
     // Ingest new flow files into 1st processor.
     unsigned int num_to_ingest = 0;
+    size_t window_num_ingested_total = 0;
+
+    for (unsigned int i = 0; i < std::min(window_num_ingested.size(), sim_step);
+         i++) {
+      window_num_ingested_total +=
+          window_num_ingested[(window_num_ingested_idx - i) %
+                              window_num_ingested.size()];
+    }
 
     if (flow.time_ms > 0) {
-      while (((total_ingested + num_to_ingest) / flow.time_ms) <
+      while ((static_cast<double>(window_num_ingested_total + num_to_ingest) /
+              static_cast<double>(window_num_ingested.size() * time_step_ms)) <
              (ingest_per_sec / 1000)) {
         num_to_ingest++;
-        total_ingested += num_to_ingest;
       }
     }
+
+    window_num_ingested_idx++;
+    window_num_ingested[window_num_ingested_idx % window_num_ingested.size()] =
+        num_to_ingest;
 
     for (unsigned int i = 0; i < num_to_ingest; i++) {
       ffile ff;
       ff.time_in_processing_ms = 0;
-      ff.size_bytes = ingest_ff_bytes(rng);
+      ff.size_bytes = ingest_ff_bytes(rng) + 1;
       assert(ff.size_bytes > 0);
+      flow.bytes_ingested += ff.size_bytes;
+      flow.count_ingested++;
 
       for (auto &c : flow.processors.front().outputs["success"]) {
         ffile clone = ff;
         c->enqueue(std::move(clone));
       }
+
+      total_ingested += num_to_ingest;
     }
 
     // Simulate processing of all processors.
@@ -363,6 +386,8 @@ int64_t SynthesizeNiFiMetrics::MetricsWriteCallback::record_state(
     ret += write_str("ingest_per_sec,", stream);
     ret += write_str("flow_total_threads,", stream);
     ret += write_str("flow_available_threads,", stream);
+    ret += write_str("flow_count_ingested,", stream);
+    ret += write_str("flow_bytes_ingested,", stream);
     ret += write_str("connection_id,", stream);
     ret += write_str("connection_name,", stream);
     ret += write_str("source_active_threads,", stream);
@@ -389,6 +414,11 @@ int64_t SynthesizeNiFiMetrics::MetricsWriteCallback::record_state(
     ret += write_str(",", stream);
     ret += write_str(std::to_string(state.available_threads), stream);
     ret += write_str(",", stream);
+    ret += write_str(std::to_string(state.count_ingested), stream);
+    ret += write_str(",", stream);
+    ret += write_str(std::to_string(state.bytes_ingested), stream);
+    ret += write_str(",", stream);
+
     ret += write_str(c.name, stream);
     ret += write_str(",", stream);
     ret += write_str(c.name, stream);
