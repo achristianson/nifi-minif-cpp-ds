@@ -82,7 +82,7 @@ class SynthesizeNiFiMetrics : public core::Processor {
 
       std::list<ffile> cur_processing;
       size_t num_waiting;
-      unsigned int num_threads;
+      unsigned int active_threads;
 
       std::normal_distribution<double> bytes_per_sec;
       std::normal_distribution<double> count_per_sec;
@@ -134,6 +134,8 @@ class SynthesizeNiFiMetrics : public core::Processor {
       double proc_bytes_per_sec;
       std::list<processor> processors;
       std::list<connection> connections;
+      int total_threads;
+      int available_threads;
     };
 
    private:
