@@ -73,8 +73,6 @@ class SynthesizeNiFiMetrics : public core::Processor {
       double time_in_processing_ms;
     };
 
-    struct connection;
-
     struct processor {
       std::string name;
       std::list<connection *> inputs;
@@ -102,7 +100,7 @@ class SynthesizeNiFiMetrics : public core::Processor {
       size_t queued_bytes;
 
       void enqueue(ffile &&f) {
-        queue.emplace_back(std::move(f));
+        queue.emplace_back(f);
         queued_bytes += f.size_bytes;
       }
 
@@ -110,7 +108,7 @@ class SynthesizeNiFiMetrics : public core::Processor {
         ffile f = queue.front();
         queue.pop_front();
 
-        if (queue.size() == 0) {
+        if (queue.empty()) {
           queued_bytes = 0;
         } else {
           queued_bytes -= f.size_bytes;
