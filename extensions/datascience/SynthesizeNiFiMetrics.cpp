@@ -16,6 +16,7 @@
  */
 
 #include <random>
+#include <algorithm>
 
 #include <core/ProcessContext.h>
 #include <core/ProcessSession.h>
@@ -42,7 +43,7 @@ void SynthesizeNiFiMetrics::initialize() {
   relationships.insert(Success);
   relationships.insert(Retry);
   relationships.insert(Failure);
-  setSupportedRelationships(std::move(relationships));
+  setSupportedRelationships(relationships);
 }
 
 void SynthesizeNiFiMetrics::onSchedule(
@@ -162,7 +163,7 @@ int64_t SynthesizeNiFiMetrics::MetricsWriteCallback::process(
       // Terminate branch (go up stack or we're done generating the graph, so
       // break out of loop)
       branch_stack.pop_back();
-      if (branch_stack.size() == 0) {
+      if (branch_stack.empty()) {
         break;
       } else {
         cur_branch = &branch_stack.back();
@@ -239,9 +240,9 @@ int64_t SynthesizeNiFiMetrics::MetricsWriteCallback::process(
         num_to_ingest;
 
     for (unsigned int i = 0; i < num_to_ingest; i++) {
-      ffile ff;
+      ffile ff{};
       ff.time_in_processing_ms = 0;
-      ff.size_bytes = ingest_ff_bytes(rng) + 1;
+      ff.size_bytes = std::max(ingest_ff_bytes(rng), 0.0);
       assert(ff.size_bytes > 0);
       flow.bytes_ingested += ff.size_bytes;
       flow.count_ingested++;
@@ -313,7 +314,7 @@ int64_t SynthesizeNiFiMetrics::MetricsWriteCallback::process(
              p.cur_processing.size() < p.active_threads && p.num_waiting == 0) {
         bool input_exists = false;
         for (auto &c : p.inputs) {
-          if (c->queue.size() > 0) {
+          if (!c->queue.empty()) {
             p.cur_processing.push_back(c->dequeue());
             auto &proc_ff = p.cur_processing.back();
 
@@ -370,7 +371,7 @@ int64_t SynthesizeNiFiMetrics::MetricsWriteCallback::process(
 int64_t SynthesizeNiFiMetrics::MetricsWriteCallback::write_str(
     const std::string &s, const std::shared_ptr<io::BaseStream> &stream) {
   // This is ugly and will generate a warning --we should change BaseStream to
-  // have a way to write const data, aspth 0 wi write does not need to make any
+  // have a way to write const data, as write does not need to make any
   // data modifications.
   return stream->write((uint8_t *)(&s[0]), s.size());
 }
