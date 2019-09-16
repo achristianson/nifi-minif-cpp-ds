@@ -18,6 +18,8 @@
 #include <random>
 #include <algorithm>
 
+#include <rapidjson/document.h>
+
 #include <core/ProcessContext.h>
 #include <core/ProcessSession.h>
 #include "SynthesizeNiFiMetrics.h"
@@ -60,10 +62,18 @@ void SynthesizeNiFiMetrics::onTrigger(
   }
 
   try {
+    // Read input paramters
     logger_->log_info("Starting NiFi metrics synthesis");
+    input_params params;
+    {
+      ParamsReadCallback rcb(&params);
+      session->read(input_cmd_ff, &rcb);
+    }
     auto flow_file = session->create();
-    MetricsWriteCallback cb;
-    session->write(flow_file, &cb);
+    {
+      MetricsWriteCallback cb(&params);
+      session->write(flow_file, &cb);
+    }
     flow_file->setAttribute("filename", "synth-data");
     session->transfer(flow_file, Success);
     session->remove(input_cmd_ff);
@@ -83,30 +93,6 @@ int64_t SynthesizeNiFiMetrics::MetricsWriteCallback::process(
   std::random_device dev;
   std::mt19937 rng(dev());
 
-  // This distribution determines how likely we are to branch. To branch, we
-  // must get a 1 out of the number, so the range determines how likely we are
-  // to branch at any given point.
-  std::uniform_int_distribution<std::mt19937::result_type> branch_dist(1, 10);
-
-  // This distribution determines how many processors a branch in the flow graph
-  // will have.
-  std::normal_distribution<double> branch_proc_count_dist(10, 2);
-
-  // These distributions determine how fast/slow processors are relative to
-  // input bytes and count.
-  std::normal_distribution<double> proc_bytes_per_sec_mean_dist(1000000, 20000);
-  std::normal_distribution<double> proc_bytes_per_sec_stddev_dist(20000, 5000);
-  double proc_bytes_per_sec_min = 10;
-  std::normal_distribution<double> proc_count_per_sec_mean_dist(75, 10);
-  std::normal_distribution<double> proc_count_per_sec_stddev_dist(5, 2);
-  double proc_count_per_sec_min = .1;
-
-  // This distribution determines the size of ingested flow files.
-  std::normal_distribution<double> ingest_ff_bytes(50000, 10000);
-
-  // This distribution determines the random walk of ingest rate
-  std::normal_distribution<double> ingest_rwalk_dist(0, .1);
-
   int64_t ret = 0;
   flow flow;
   flow.time_ms = 0;
@@ -121,7 +107,7 @@ int64_t SynthesizeNiFiMetrics::MetricsWriteCallback::process(
   cur_branch->proc_idx = 0;
   cur_branch->root_proc = nullptr;
   cur_branch->last_proc = nullptr;
-  cur_branch->num_procs = static_cast<size_t>(branch_proc_count_dist(rng));
+  cur_branch->num_procs = static_cast<size_t>(params_->branch_proc_count_dist(rng));
   logger_->log_info("Generating root branch with %d processors",
                     cur_branch->num_procs);
   next_branch_id++;
@@ -131,13 +117,13 @@ int64_t SynthesizeNiFiMetrics::MetricsWriteCallback::process(
     flow.processors.emplace_back();
     processor &cur_proc = flow.processors.back();
     cur_proc.name = "proc_" + std::to_string(cur_branch->id) + "_" +
-                    std::to_string(cur_branch->proc_idx);
+        std::to_string(cur_branch->proc_idx);
     logger_->log_info("Generating processor %s", cur_proc.name);
     cur_proc.active_threads = 1;
     cur_proc.bytes_per_sec = std::normal_distribution<double>(
-        proc_bytes_per_sec_mean_dist(rng), proc_bytes_per_sec_stddev_dist(rng));
+        params_->proc_bytes_per_sec_mean_dist(rng), params_->proc_bytes_per_sec_stddev_dist(rng));
     cur_proc.count_per_sec = std::normal_distribution<double>(
-        proc_count_per_sec_mean_dist(rng), proc_count_per_sec_stddev_dist(rng));
+        params_->proc_count_per_sec_mean_dist(rng), params_->proc_count_per_sec_stddev_dist(rng));
 
     if (cur_branch->last_proc != nullptr &&
         cur_branch->proc_idx < cur_branch->num_procs) {
@@ -174,13 +160,13 @@ int64_t SynthesizeNiFiMetrics::MetricsWriteCallback::process(
       cur_branch->proc_idx++;
 
       // Add branch in flow.
-      if (branch_dist(rng) == 1) {
+      if (params_->branch_dist(rng) == 1) {
         branch_stack.emplace_back();
         cur_branch = &branch_stack.back();
         cur_branch->id = next_branch_id;
         cur_branch->num_procs = static_cast<size_t>(std::max(
             1,
-            static_cast<int>(branch_proc_count_dist(rng) - branch_depth * 2)));
+            static_cast<int>(params_->branch_proc_count_dist(rng) - branch_depth * 2)));
         logger_->log_info("Generating branch at depth %d with %d processors",
                           branch_depth, cur_branch->num_procs);
         cur_branch->proc_idx = 0;
@@ -208,7 +194,7 @@ int64_t SynthesizeNiFiMetrics::MetricsWriteCallback::process(
 
   for (size_t sim_step = 0; sim_step < sim_steps; sim_step++) {
     // Random walk the ingest rate
-    ingest_per_sec += ingest_rwalk_dist(rng);
+    ingest_per_sec += params_->ingest_rwalk_dist(rng);
 
     if (ingest_per_sec < 0) {
       ingest_per_sec = 0;
@@ -224,13 +210,13 @@ int64_t SynthesizeNiFiMetrics::MetricsWriteCallback::process(
          i++) {
       window_num_ingested_total +=
           window_num_ingested[(window_num_ingested_idx - i) %
-                              window_num_ingested.size()];
+              window_num_ingested.size()];
     }
 
     if (flow.time_ms > 0) {
       while ((static_cast<double>(window_num_ingested_total + num_to_ingest) /
-              static_cast<double>(window_num_ingested.size() * time_step_ms)) <
-             (ingest_per_sec / 1000)) {
+          static_cast<double>(window_num_ingested.size() * time_step_ms)) <
+          (ingest_per_sec / 1000)) {
         num_to_ingest++;
       }
     }
@@ -242,7 +228,7 @@ int64_t SynthesizeNiFiMetrics::MetricsWriteCallback::process(
     for (unsigned int i = 0; i < num_to_ingest; i++) {
       ffile ff{};
       ff.time_in_processing_ms = 0;
-      ff.size_bytes = std::max(ingest_ff_bytes(rng), 0.0);
+      ff.size_bytes = std::max(params_->ingest_ff_bytes(rng), 0.0);
       assert(ff.size_bytes > 0);
       flow.bytes_ingested += ff.size_bytes;
       flow.count_ingested++;
@@ -311,7 +297,7 @@ int64_t SynthesizeNiFiMetrics::MetricsWriteCallback::process(
 
       // Because threads are available, processor can start working on inputs.
       while (flow.available_threads > 0 &&
-             p.cur_processing.size() < p.active_threads && p.num_waiting == 0) {
+          p.cur_processing.size() < p.active_threads && p.num_waiting == 0) {
         bool input_exists = false;
         for (auto &c : p.inputs) {
           if (!c->queue.empty()) {
@@ -321,11 +307,11 @@ int64_t SynthesizeNiFiMetrics::MetricsWriteCallback::process(
             // Determine how long this flow file will take to process.
             auto ms_to_process_bytes =
                 (proc_ff.size_bytes /
-                 std::max(p.bytes_per_sec(rng), proc_bytes_per_sec_min)) *
-                1000;
+                    std::max(p.bytes_per_sec(rng), params_->proc_bytes_per_sec_min)) *
+                    1000;
             auto ms_to_process_count =
-                (1 / std::max(p.count_per_sec(rng), proc_count_per_sec_min)) *
-                1000;
+                (1 / std::max(p.count_per_sec(rng), params_->proc_count_per_sec_min)) *
+                    1000;
             proc_ff.time_to_process_ms =
                 std::max(ms_to_process_bytes, ms_to_process_count);
 
@@ -373,7 +359,7 @@ int64_t SynthesizeNiFiMetrics::MetricsWriteCallback::write_str(
   // This is ugly and will generate a warning --we should change BaseStream to
   // have a way to write const data, as write does not need to make any
   // data modifications.
-  return stream->write((uint8_t *)(&s[0]), s.size());
+  return stream->write((uint8_t *) (&s[0]), s.size());
 }
 
 int64_t SynthesizeNiFiMetrics::MetricsWriteCallback::record_state(
@@ -457,4 +443,4 @@ int64_t SynthesizeNiFiMetrics::MetricsWriteCallback::record_state(
 }  // namespace minifi
 }  // namespace nifi
 }  // namespace apache
-} /* namespace org */
+}  // namespace org
